@@ -5,7 +5,6 @@ from pathlib import Path
 
 from machue.config import DEFAULT_CONFIG_PATH, HueConfig, load_config, save_config
 from machue.hue import HueClient, HueError
-from machue.tui import run_tui
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -14,7 +13,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--username", help="Hue API username/token")
     p.add_argument(
         "--config",
-        type=Path,
+        type=lambda value: Path(value).expanduser(),
         default=DEFAULT_CONFIG_PATH,
         help=f"Config file path (default: {DEFAULT_CONFIG_PATH})",
     )
@@ -377,6 +376,12 @@ def main() -> int:
             print("OK")
             return 0
         if args.cmd == "tui":
+            try:
+                from machue.tui import run_tui
+            except ModuleNotFoundError as exc:
+                raise HueError(
+                    "TUI requires curses support. On Windows install with: pip install windows-curses"
+                ) from exc
             run_tui(client)
             return 0
 

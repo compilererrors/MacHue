@@ -7,6 +7,9 @@ name = "machue"
 version = "0.1.0"
 description = "CLI and TUI controller for Philips Hue lights"
 requires-python = ">=3.10"
+dependencies = [
+  "windows-curses; platform_system == 'Windows'",
+]
 
 [project.scripts]
 machue = "machue.cli:main"

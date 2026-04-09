@@ -37,10 +37,28 @@ For single-binary distribution, **Go** is a natural alternative.
 ## Installation
 
 ```bash
-cd /Users/viktornyberg/Workspace/MacHue
+cd <path-to-machue>
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python3 -m pip install -e .
+```
+
+Windows (PowerShell):
+
+```powershell
+cd <path-to-machue>
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
+py -3 -m pip install -e .
+```
+
+Windows (Command Prompt):
+
+```bat
+cd <path-to-machue>
+py -3 -m venv .venv
+.venv\Scripts\activate.bat
+py -3 -m pip install -e .
 ```
 
 ## Initial Configuration
@@ -67,7 +85,7 @@ machue --strict-tls login --username <TOKEN> --bridge-ip 192.168.1.10
 
 Configuration file:
 
-- path: `~/.config/machue/config.json`
+- path: `~/.config/machue/config.json` (kept consistent across platforms)
 - keys: `bridge_ip`, `username`, `strict_tls`
 
 ## Usage
@@ -152,3 +170,5 @@ python3 -m unittest discover -s tests -v
 - `Hue error: Missing bridge IP`: pass `--bridge-ip` or save it with `config set`.
 - `Hue error: Missing username/token`: run `pair` or save a token with `login`/`config set`.
 - TLS verification failures in strict mode: use `--insecure-tls` or save insecure mode with `machue config set --insecure-tls`.
+- `zsh: command not found: python`: use `python3` on macOS/Linux, or `py -3` on Windows.
+- `TUI requires curses support` on Windows: reinstall with `py -3 -m pip install -e .` so `windows-curses` is installed.

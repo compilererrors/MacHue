@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import argparse
-import curses
 import time
 from pathlib import Path
+
+try:
+    import curses
+except ModuleNotFoundError:
+    curses = None
 
 from machue.config import DEFAULT_CONFIG_PATH, load_config
 from machue.hue import HueClient, HueError
@@ -13,6 +17,10 @@ class HueTUI:
     DEFAULT_SPLIT_RATIO = 0.60
 
     def __init__(self, client: HueClient):
+        if curses is None:
+            raise HueError(
+                "TUI requires curses support. On Windows install with: pip install windows-curses"
+            )
         self.client = client
         self.mode = "lights"
         self.selected_light_index = 0
@@ -532,7 +540,7 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(strict_tls=None)
     p.add_argument(
         "--config",
-        type=Path,
+        type=lambda value: Path(value).expanduser(),
         default=DEFAULT_CONFIG_PATH,
         help=f"Config file path (default: {DEFAULT_CONFIG_PATH})",
     )
