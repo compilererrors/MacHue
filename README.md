@@ -86,6 +86,16 @@ machue tui
 machue-tui
 ```
 
+## Screenshots
+
+### Lights View
+
+![MacHue TUI Lights](assets/images/lights.png)
+
+### Scenes View
+
+![MacHue TUI Scenes](assets/images/scenes.png)
+
 ## Testing
 
 Run tests from the repository root:
