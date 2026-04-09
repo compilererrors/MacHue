@@ -43,7 +43,7 @@ source .venv/bin/activate
 python3 -m pip install -e .
 ```
 
-Windows (PowerShell):
+Windows:
 
 ```powershell
 cd <path-to-machue>
@@ -52,14 +52,30 @@ py -3 -m venv .venv
 py -3 -m pip install -e .
 ```
 
-Windows (Command Prompt):
+## OneDir Install to `~/bin` (macOS/Linux)
 
-```bat
-cd <path-to-machue>
-py -3 -m venv .venv
-.venv\Scripts\activate.bat
-py -3 -m pip install -e .
+Quick install with script:
+
+```bash
+./scripts/install_onedir.sh
 ```
+
+The script prompts for install path with two options:
+
+- `1`: default `~/bin`
+- `2`: custom path input
+
+Ensure `~/bin` is in `PATH`:
+
+```bash
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Config compatibility note:
+
+- the app still uses `~/.config/machue/config.json`
+- existing saved `bridge_ip` / `username` / `strict_tls` continue to work
 
 ## Initial Configuration
 
