@@ -18,10 +18,11 @@ class ConfigTests(unittest.TestCase):
     def test_save_then_load_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"
-            save_config(HueConfig(bridge_ip="192.168.1.2", username="abc123"), path)
+            save_config(HueConfig(bridge_ip="192.168.1.2", username="abc123", strict_tls=True), path)
             loaded = load_config(path)
             self.assertEqual(loaded.bridge_ip, "192.168.1.2")
             self.assertEqual(loaded.username, "abc123")
+            self.assertTrue(loaded.strict_tls)
 
 
 if __name__ == "__main__":

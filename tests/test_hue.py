@@ -43,37 +43,101 @@ class HueTests(unittest.TestCase):
         client = HueClient("192.168.1.20")
         with patch.object(
             client,
-            "_request",
+            "_request_v1",
             return_value=[{"success": {"username": "generated-user"}}],
         ):
             username = client.create_user()
         self.assertEqual(username, "generated-user")
         self.assertEqual(client.username, "generated-user")
 
-    def test_request_requires_username_for_authenticated_paths(self) -> None:
+    def test_request_v2_requires_username(self) -> None:
         client = HueClient("192.168.1.20", username=None)
         with self.assertRaises(HueError):
-            client._request("GET", "/lights")
+            client._request_v2("GET", "/resource/light")
 
-    def test_request_uses_https_for_bridge_calls(self) -> None:
+    def test_request_v2_uses_https_clip_path_and_app_key(self) -> None:
         client = HueClient("192.168.1.20", username="u1")
-        captured: dict[str, str] = {}
+        captured: dict[str, object] = {}
 
         def _fake_urlopen(req, **kwargs):
             captured["url"] = req.full_url
-            return _FakeHTTPResponse({})
+            captured["headers"] = dict(req.header_items())
+            return _FakeHTTPResponse({"errors": [], "data": []})
 
         with patch("machue.hue.request.urlopen", side_effect=_fake_urlopen):
-            result = client._request("GET", "/lights")
+            result = client._request_v2("GET", "/resource/light")
 
-        self.assertEqual(result, {})
-        self.assertEqual(captured["url"], "https://192.168.1.20/api/u1/lights")
+        self.assertEqual(result, {"errors": [], "data": []})
+        self.assertEqual(captured["url"], "https://192.168.1.20/clip/v2/resource/light")
+        headers = {str(k).lower(): str(v) for k, v in dict(captured["headers"]).items()}
+        self.assertEqual(headers.get("hue-application-key"), "u1")
 
-    def test_raise_if_hue_error_raises(self) -> None:
+    def test_get_lights_maps_v2_resources_to_display_ids(self) -> None:
+        client = HueClient("192.168.1.20", username="u1")
+        with patch.object(
+            client,
+            "_request_v2",
+            return_value={
+                "errors": [],
+                "data": [
+                    {"id": "rid-b", "metadata": {"name": "Beta"}, "on": {"on": True}, "dimming": {"brightness": 50}},
+                    {"id": "rid-a", "metadata": {"name": "Alpha"}, "on": {"on": False}},
+                ],
+            },
+        ):
+            lights = client.get_lights()
+
+        self.assertEqual(list(lights.keys()), ["1", "2"])
+        self.assertEqual(lights["1"]["name"], "Alpha")
+        self.assertEqual(lights["2"]["state"]["bri"], 127)
+
+    def test_get_groups_and_scenes_map_scene_group_to_display_index(self) -> None:
+        client = HueClient("192.168.1.20", username="u1")
+
+        def _fake_request_v2(method: str, path: str, payload=None):
+            self.assertEqual(method, "GET")
+            if path == "/resource/room":
+                return {
+                    "errors": [],
+                    "data": [
+                        {
+                            "id": "room-1",
+                            "metadata": {"name": "Living Room"},
+                            "services": [{"rtype": "grouped_light", "rid": "gl-room-1"}],
+                        }
+                    ],
+                }
+            if path == "/resource/zone":
+                return {"errors": [], "data": []}
+            if path == "/resource/bridge_home":
+                return {
+                    "errors": [],
+                    "data": [{"services": [{"rtype": "grouped_light", "rid": "gl-home"}]}],
+                }
+            if path == "/resource/scene":
+                return {
+                    "errors": [],
+                    "data": [
+                        {
+                            "id": "scene-1",
+                            "metadata": {"name": "Relax"},
+                            "group": {"rid": "room-1", "rtype": "room"},
+                        }
+                    ],
+                }
+            raise AssertionError(f"Unexpected path {path}")
+
+        with patch.object(client, "_request_v2", side_effect=_fake_request_v2):
+            groups = client.get_groups()
+            scenes = client.get_scenes()
+
+        self.assertIn("0", groups)
+        self.assertEqual(groups["1"]["name"], "Living Room")
+        self.assertEqual(scenes["scene-1"]["group"], 1)
+
+    def test_raise_if_v2_error_raises(self) -> None:
         with self.assertRaises(HueError):
-            HueClient._raise_if_hue_error(
-                [{"error": {"type": 1, "address": "/", "description": "failure"}}]
-            )
+            HueClient._raise_if_v2_error({"errors": [{"description": "failure"}], "data": []})
 
 
 if __name__ == "__main__":

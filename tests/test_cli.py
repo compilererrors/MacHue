@@ -79,6 +79,88 @@ class CLITests(unittest.TestCase):
         group = cli._resolve_scene_group(fake_client, "abc", None)  # type: ignore[arg-type]
         self.assertEqual(group, 3)
 
+    def test_config_strict_tls_set_and_show(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.json"
+            code, out = _run_cli(
+                [
+                    "machue",
+                    "--config",
+                    str(cfg),
+                    "config",
+                    "set",
+                    "--strict-tls",
+                ]
+            )
+            self.assertEqual(code, 0)
+            self.assertIn("Updated config", out)
+
+            code, out = _run_cli(["machue", "--config", str(cfg), "config", "show"])
+            self.assertEqual(code, 0)
+            self.assertIn("tls_mode: strict", out)
+
+    def test_list_uses_strict_tls_from_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.json"
+            code, _ = _run_cli(
+                [
+                    "machue",
+                    "--config",
+                    str(cfg),
+                    "config",
+                    "set",
+                    "--bridge-ip",
+                    "192.168.1.10",
+                    "--username",
+                    "token-1",
+                    "--strict-tls",
+                ]
+            )
+            self.assertEqual(code, 0)
+
+            with patch("machue.cli.HueClient") as mock_client_cls:
+                mock_client = mock_client_cls.return_value
+                mock_client.get_lights.return_value = {}
+                code, out = _run_cli(["machue", "--config", str(cfg), "list"])
+
+            self.assertEqual(code, 0)
+            self.assertIn("ID  Name", out)
+            mock_client_cls.assert_called_with(
+                bridge_ip="192.168.1.10",
+                username="token-1",
+                insecure_tls=False,
+            )
+
+    def test_list_defaults_to_insecure_tls_when_unset_in_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.json"
+            code, _ = _run_cli(
+                [
+                    "machue",
+                    "--config",
+                    str(cfg),
+                    "config",
+                    "set",
+                    "--bridge-ip",
+                    "192.168.1.10",
+                    "--username",
+                    "token-1",
+                ]
+            )
+            self.assertEqual(code, 0)
+
+            with patch("machue.cli.HueClient") as mock_client_cls:
+                mock_client = mock_client_cls.return_value
+                mock_client.get_lights.return_value = {}
+                code, _ = _run_cli(["machue", "--config", str(cfg), "list"])
+
+            self.assertEqual(code, 0)
+            mock_client_cls.assert_called_with(
+                bridge_ip="192.168.1.10",
+                username="token-1",
+                insecure_tls=True,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

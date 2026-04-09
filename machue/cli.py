@@ -18,6 +18,20 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_CONFIG_PATH,
         help=f"Config file path (default: {DEFAULT_CONFIG_PATH})",
     )
+    tls_group = p.add_mutually_exclusive_group()
+    tls_group.add_argument(
+        "--strict-tls",
+        dest="strict_tls",
+        action="store_true",
+        help="Enable strict TLS certificate verification for bridge requests",
+    )
+    tls_group.add_argument(
+        "--insecure-tls",
+        dest="strict_tls",
+        action="store_false",
+        help="Disable TLS certificate verification for bridge requests",
+    )
+    p.set_defaults(strict_tls=None)
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -38,11 +52,35 @@ def _parser() -> argparse.ArgumentParser:
     cfg_set = cfg_sub.add_parser("set", help="Set bridge IP and/or username token")
     cfg_set.add_argument("--bridge-ip", help="Bridge IP to save")
     cfg_set.add_argument("--username", help="Hue API username/token to save")
+    cfg_tls = cfg_set.add_mutually_exclusive_group()
+    cfg_tls.add_argument(
+        "--strict-tls",
+        dest="strict_tls",
+        action="store_true",
+        help="Save strict TLS mode",
+    )
+    cfg_tls.add_argument(
+        "--insecure-tls",
+        dest="strict_tls",
+        action="store_false",
+        help="Save insecure TLS mode",
+    )
+    cfg_set.set_defaults(strict_tls=None)
 
     cfg_clear = cfg_sub.add_parser("clear", help="Clear fields from config")
     cfg_clear.add_argument("--bridge-ip", action="store_true", help="Clear saved bridge IP")
     cfg_clear.add_argument("--username", action="store_true", help="Clear saved username/token")
-    cfg_clear.add_argument("--all", action="store_true", help="Clear both bridge IP and username/token")
+    cfg_clear.add_argument(
+        "--strict-tls",
+        dest="clear_strict_tls",
+        action="store_true",
+        help="Clear saved strict TLS setting",
+    )
+    cfg_clear.add_argument(
+        "--all",
+        action="store_true",
+        help="Clear bridge IP, username/token, and strict TLS setting",
+    )
 
     sub.add_parser("list", help="List all lights")
     sub.add_parser("groups", help="List all groups/rooms/zones")
@@ -72,11 +110,15 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-def _resolve_config(args: argparse.Namespace) -> tuple[HueConfig, str | None, str | None]:
+def _resolve_config(args: argparse.Namespace) -> tuple[HueConfig, str | None, str | None, bool]:
     cfg = load_config(args.config)
     bridge_ip = args.bridge_ip or cfg.bridge_ip
     username = args.username or cfg.username
-    return cfg, bridge_ip, username
+    if args.strict_tls is None:
+        strict_tls = bool(cfg.strict_tls)
+    else:
+        strict_tls = bool(args.strict_tls)
+    return cfg, bridge_ip, username, strict_tls
 
 
 def _require_bridge_ip(bridge_ip: str | None) -> str:
@@ -106,6 +148,11 @@ def _print_config(config: HueConfig, path: Path) -> None:
     print(f"config_path: {path}")
     print(f"bridge_ip: {config.bridge_ip or '-'}")
     print(f"username: {config.username or '-'}")
+    if config.strict_tls is None:
+        tls_mode = "insecure (default)"
+    else:
+        tls_mode = "strict" if config.strict_tls else "insecure"
+    print(f"tls_mode: {tls_mode}")
 
 
 def _config_set(
@@ -113,27 +160,40 @@ def _config_set(
     path: Path,
     bridge_ip: str | None = None,
     username: str | None = None,
+    strict_tls: bool | None = None,
 ) -> None:
-    if bridge_ip is None and username is None:
-        raise HueError("Nothing to set. Use --bridge-ip and/or --username.")
+    if bridge_ip is None and username is None and strict_tls is None:
+        raise HueError("Nothing to set. Use --bridge-ip, --username and/or --strict-tls/--insecure-tls.")
     if bridge_ip is not None:
         cfg.bridge_ip = bridge_ip
     if username is not None:
         cfg.username = username
+    if strict_tls is not None:
+        cfg.strict_tls = strict_tls
     save_config(cfg, path)
 
 
-def _config_clear(cfg: HueConfig, path: Path, clear_bridge_ip: bool, clear_username: bool, clear_all: bool) -> None:
+def _config_clear(
+    cfg: HueConfig,
+    path: Path,
+    clear_bridge_ip: bool,
+    clear_username: bool,
+    clear_strict_tls: bool,
+    clear_all: bool,
+) -> None:
     if clear_all:
         cfg.bridge_ip = None
         cfg.username = None
+        cfg.strict_tls = None
     else:
         if clear_bridge_ip:
             cfg.bridge_ip = None
         if clear_username:
             cfg.username = None
-    if not (clear_bridge_ip or clear_username or clear_all):
-        raise HueError("Nothing to clear. Use --bridge-ip, --username or --all.")
+        if clear_strict_tls:
+            cfg.strict_tls = None
+    if not (clear_bridge_ip or clear_username or clear_strict_tls or clear_all):
+        raise HueError("Nothing to clear. Use --bridge-ip, --username, --strict-tls or --all.")
     save_config(cfg, path)
 
 
@@ -193,8 +253,9 @@ def _resolve_scene_group(client: HueClient, scene_id: str, requested_group: int 
         return 0
     try:
         return int(str(scene_group))
-    except ValueError as exc:
-        raise HueError(f"Scene {scene_id} has invalid group: {scene_group}") from exc
+    except ValueError:
+        # API v2 scenes may contain resource IDs instead of numeric group indexes.
+        return 0
 
 
 def _set_brightness(client: HueClient, target: str, value: int) -> None:
@@ -222,7 +283,7 @@ def _toggle(client: HueClient, target: str) -> None:
 
 def main() -> int:
     args = _parser().parse_args()
-    cfg, bridge_ip, username = _resolve_config(args)
+    cfg, bridge_ip, username, strict_tls = _resolve_config(args)
 
     try:
         if args.cmd == "discover":
@@ -235,16 +296,24 @@ def main() -> int:
 
         if args.cmd == "pair":
             ip = _require_bridge_ip(bridge_ip)
-            client = HueClient(bridge_ip=ip)
+            client = HueClient(bridge_ip=ip, insecure_tls=not strict_tls)
             new_user = client.create_user(devicetype=args.devicetype)
             cfg.bridge_ip = ip
             cfg.username = new_user
+            if args.strict_tls is not None:
+                cfg.strict_tls = bool(args.strict_tls)
             save_config(cfg, args.config)
             print(f"Paired successfully. Saved username to {args.config}")
             return 0
 
         if args.cmd == "login":
-            _config_set(cfg, args.config, bridge_ip=args.bridge_ip, username=args.username)
+            _config_set(
+                cfg,
+                args.config,
+                bridge_ip=args.bridge_ip,
+                username=args.username,
+                strict_tls=args.strict_tls,
+            )
             print(f"Saved credentials to {args.config}")
             return 0
 
@@ -253,7 +322,13 @@ def main() -> int:
                 _print_config(cfg, args.config)
                 return 0
             if args.config_cmd == "set":
-                _config_set(cfg, args.config, bridge_ip=args.bridge_ip, username=args.username)
+                _config_set(
+                    cfg,
+                    args.config,
+                    bridge_ip=args.bridge_ip,
+                    username=args.username,
+                    strict_tls=args.strict_tls,
+                )
                 print(f"Updated config at {args.config}")
                 return 0
             if args.config_cmd == "clear":
@@ -262,13 +337,14 @@ def main() -> int:
                     args.config,
                     clear_bridge_ip=args.bridge_ip,
                     clear_username=args.username,
+                    clear_strict_tls=args.clear_strict_tls,
                     clear_all=args.all,
                 )
                 print(f"Updated config at {args.config}")
                 return 0
 
         ip, user = _require_auth(bridge_ip, username)
-        client = HueClient(bridge_ip=ip, username=user)
+        client = HueClient(bridge_ip=ip, username=user, insecure_tls=not strict_tls)
 
         if args.cmd == "list":
             _print_lights(client)

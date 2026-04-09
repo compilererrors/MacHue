@@ -1,6 +1,6 @@
 # MacHue
 
-CLI and TUI for local Philips Hue control via Hue Bridge API v1 over HTTPS.
+CLI and TUI for local Philips Hue control via Hue Bridge API v2 over HTTPS.
 
 ## Overview
 
@@ -12,8 +12,12 @@ This project includes:
 
 Protocol notes:
 
-- Bridge communication uses HTTPS (`https://<bridge_ip>/api/...`).
-- This project currently targets Hue local API v1 endpoints (`/lights`, `/groups`, `/scenes`).
+- Bridge communication uses HTTPS.
+- Runtime control uses Hue local API v2 resources (`/clip/v2/resource/...`).
+- Pairing (`machue pair`) uses the local whitelist creation flow on `/api`.
+- TLS certificate verification is configurable:
+  - default: insecure TLS mode (works out of the box with common Hue bridge certificates)
+  - strict TLS mode: `--strict-tls` (recommended when certificate trust is configured)
 
 ## Technology Choice
 
@@ -57,12 +61,14 @@ Alternatively, save an existing token:
 
 ```bash
 machue login --username <TOKEN> --bridge-ip 192.168.1.10
+# strict TLS can be saved at the same time
+machue --strict-tls login --username <TOKEN> --bridge-ip 192.168.1.10
 ```
 
 Configuration file:
 
 - path: `~/.config/machue/config.json`
-- keys: `bridge_ip` and `username`
+- keys: `bridge_ip`, `username`, `strict_tls`
 
 ## Usage
 
@@ -81,6 +87,8 @@ machue scenes --name relax
 machue scene <SCENE_ID>
 machue config show
 machue config set --username <TOKEN>
+machue config set --strict-tls
+machue --strict-tls list
 ```
 
 Start the TUI:
@@ -120,6 +128,7 @@ python3 -m unittest discover -s tests -v
 - `Enter` or `Space`: toggle (Lights) / recall (Scenes)
 - `+/-`: adjust brightness (Lights)
 - `[` / `]`: resize left/right panel proportion
+- `0`: reset panel split to default `60/40`
 - `l`: switch to Lights
 - `s`: switch to Scenes
 - `r`: refresh data
@@ -129,8 +138,11 @@ python3 -m unittest discover -s tests -v
 
 - `machue config show`
 - `machue config set --bridge-ip 192.168.1.10 --username <TOKEN>`
+- `machue config set --strict-tls`
+- `machue config set --insecure-tls`
 - `machue config clear --username`
 - `machue config clear --bridge-ip`
+- `machue config clear --strict-tls`
 - `machue config clear --all`
 - `machue login --username <TOKEN> --bridge-ip 192.168.1.10`
 
@@ -139,3 +151,4 @@ python3 -m unittest discover -s tests -v
 - `Hue error: link button not pressed`: press the bridge button and run `pair` again within the time window.
 - `Hue error: Missing bridge IP`: pass `--bridge-ip` or save it with `config set`.
 - `Hue error: Missing username/token`: run `pair` or save a token with `login`/`config set`.
+- TLS verification failures in strict mode: use `--insecure-tls` or save insecure mode with `machue config set --insecure-tls`.

@@ -10,6 +10,8 @@ from machue.hue import HueClient, HueError
 
 
 class HueTUI:
+    DEFAULT_SPLIT_RATIO = 0.60
+
     def __init__(self, client: HueClient):
         self.client = client
         self.mode = "lights"
@@ -24,7 +26,7 @@ class HueTUI:
         self.last_refresh = 0.0
         self.last_width = 0
         self.colors_enabled = False
-        self.panel_split_ratio = 0.64
+        self.panel_split_ratio = self.DEFAULT_SPLIT_RATIO
 
         self.attr_title = curses.A_BOLD
         self.attr_header = curses.A_UNDERLINE | curses.A_BOLD
@@ -194,12 +196,14 @@ class HueTUI:
         self.set_status(f"Mode: {self.mode}")
 
     def _compute_panel_widths(self, total_width: int) -> tuple[int, int]:
-        min_list = 48
-        min_detail = 24
-        max_list = max(min_list, total_width - min_detail - 2)
-        list_w = int(total_width * self.panel_split_ratio)
+        # Exclude divider and one-column gap so the ratio applies to usable content width.
+        usable_width = max(1, total_width - 2)
+        min_list = 40
+        min_detail = 28
+        max_list = max(min_list, usable_width - min_detail)
+        list_w = int(round(usable_width * self.panel_split_ratio))
         list_w = max(min_list, min(max_list, list_w))
-        panel_w = total_width - list_w - 2
+        panel_w = usable_width - list_w
         return list_w, panel_w
 
     def adjust_panel_split(self, delta: float) -> None:
@@ -207,15 +211,20 @@ class HueTUI:
             self.set_status("Split resize requires wider terminal (>=100 cols)")
             return
 
-        min_list = 48
-        min_detail = 24
-        max_list = max(min_list, self.last_width - min_detail - 2)
-        min_ratio = min_list / self.last_width
-        max_ratio = max_list / self.last_width
+        usable_width = max(1, self.last_width - 2)
+        min_list = 40
+        min_detail = 28
+        max_list = max(min_list, usable_width - min_detail)
+        min_ratio = min_list / usable_width
+        max_ratio = max_list / usable_width
 
         self.panel_split_ratio = max(min_ratio, min(max_ratio, self.panel_split_ratio + delta))
         left_pct = int(round(self.panel_split_ratio * 100))
         self.set_status(f"Panel split: {left_pct}/{100 - left_pct}")
+
+    def reset_panel_split(self) -> None:
+        self.panel_split_ratio = self.DEFAULT_SPLIT_RATIO
+        self.set_status("Panel split reset to 60/40")
 
     def _draw_tabs(self, stdscr: curses.window, width: int) -> None:
         lights_label = f"[1] Lights ({len(self.light_rows)})"
@@ -336,16 +345,16 @@ class HueTUI:
                     attr = self.attr_on if is_on else self.attr_off
                 self._safe_addnstr(stdscr, y, x, line, width, attr)
         else:
-            scene_w = min(16, max(10, int(width * 0.28)))
-            group_w = min(20, max(10, int(width * 0.30)))
-            name_w = max(8, width - scene_w - group_w - 4)
-            header = f"{'Scene ID':<{scene_w}} {'Name':<{name_w}} {'Group':<{group_w}}"
+            idx_w = 4
+            group_w = min(20, max(10, int(width * 0.32)))
+            name_w = max(8, width - idx_w - group_w - 3)
+            header = f"{'#':>{idx_w}} {'Name':<{name_w}} {'Group':<{group_w}}"
             self._safe_addnstr(stdscr, y_top, x, header, width, self.attr_header)
 
             end = min(len(rows), scroll + visible_rows)
             for draw_idx, row_idx in enumerate(range(scroll, end)):
                 y = row_start + draw_idx
-                scene_id, scene = rows[row_idx]
+                _, scene = rows[row_idx]
                 name = str(scene.get("name", "Unnamed"))[:name_w]
                 group_raw = scene.get("group")
                 if group_raw is None:
@@ -353,7 +362,8 @@ class HueTUI:
                 else:
                     group_name = self.group_names.get(str(group_raw), f"Group {group_raw}")
                 group_name = group_name[:group_w]
-                line = f"{scene_id:<{scene_w}} {name:<{name_w}} {group_name:<{group_w}}"
+                row_num = row_idx + 1
+                line = f"{row_num:>{idx_w}} {name:<{name_w}} {group_name:<{group_w}}"
                 attr = self.attr_selected if row_idx == selected_index else curses.A_NORMAL
                 self._safe_addnstr(stdscr, y, x, line, width, attr)
 
@@ -411,7 +421,7 @@ class HueTUI:
         if show_panel:
             left_pct = int(round((list_w / w) * 100))
             status_line += f" | Split {left_pct}/{100 - left_pct}"
-        hints = "↑/↓ move  PgUp/PgDn page  g/G top/bottom  Tab/←→ mode  [ ] resize  Enter action  +/- bri  r refresh  q quit"
+        hints = "↑/↓ move  PgUp/PgDn page  g/G top/bottom  Tab/←→ mode  [ ] resize  0 reset  Enter action  +/- bri  r refresh  q quit"
         self._safe_addnstr(stdscr, h - 2, 0, status_line, w - 1, curses.A_DIM)
         self._safe_addnstr(stdscr, h - 1, 0, hints, w - 1, curses.A_DIM)
         stdscr.refresh()
@@ -471,6 +481,8 @@ class HueTUI:
                     self.adjust_panel_split(-0.03)
                 elif key == ord("]"):
                     self.adjust_panel_split(0.03)
+                elif key == ord("0"):
+                    self.reset_panel_split()
                 elif key in (ord("\t"), curses.KEY_LEFT, curses.KEY_RIGHT):
                     if key == curses.KEY_LEFT:
                         self.mode = "lights"
@@ -504,6 +516,20 @@ def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="MacHue TUI")
     p.add_argument("--bridge-ip", help="Hue bridge IP")
     p.add_argument("--username", help="Hue API username/token")
+    tls_group = p.add_mutually_exclusive_group()
+    tls_group.add_argument(
+        "--strict-tls",
+        dest="strict_tls",
+        action="store_true",
+        help="Enable strict TLS certificate verification for bridge requests",
+    )
+    tls_group.add_argument(
+        "--insecure-tls",
+        dest="strict_tls",
+        action="store_false",
+        help="Disable TLS certificate verification for bridge requests",
+    )
+    p.set_defaults(strict_tls=None)
     p.add_argument(
         "--config",
         type=Path,
@@ -518,10 +544,14 @@ def main() -> int:
     cfg = load_config(args.config)
     bridge_ip = args.bridge_ip or cfg.bridge_ip
     username = args.username or cfg.username
+    if args.strict_tls is None:
+        strict_tls = bool(cfg.strict_tls)
+    else:
+        strict_tls = bool(args.strict_tls)
     if not bridge_ip or not username:
         print("Missing bridge_ip/username. Use --bridge-ip --username or run pair in CLI first.")
         return 2
-    client = HueClient(bridge_ip=bridge_ip, username=username)
+    client = HueClient(bridge_ip=bridge_ip, username=username, insecure_tls=not strict_tls)
     try:
         run_tui(client)
     except HueError as exc:
