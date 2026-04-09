@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "machue"
+version = "0.1.0"
+description = "CLI and TUI controller for Philips Hue lights"
+requires-python = ">=3.10"
+
+[project.scripts]
+machue = "machue.cli:main"
+machue-tui = "machue.tui:main"
