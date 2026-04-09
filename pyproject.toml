@@ -11,3 +11,6 @@ requires-python = ">=3.10"
 [project.scripts]
 machue = "machue.cli:main"
 machue-tui = "machue.tui:main"
+
+[tool.setuptools]
+packages = ["machue"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
@@ -17,10 +18,17 @@ class BridgeInfo:
 
 
 class HueClient:
-    def __init__(self, bridge_ip: str, username: str | None = None, timeout: float = 3.0):
+    def __init__(
+        self,
+        bridge_ip: str,
+        username: str | None = None,
+        timeout: float = 3.0,
+        insecure_tls: bool = True,
+    ):
         self.bridge_ip = bridge_ip
         self.username = username
         self.timeout = timeout
+        self.insecure_tls = insecure_tls
 
     @staticmethod
     def discover_bridges(timeout: float = 3.0) -> list[BridgeInfo]:
@@ -87,7 +95,7 @@ class HueClient:
         payload: dict[str, Any] | None = None,
         include_username: bool = True,
     ) -> Any:
-        base = f"http://{self.bridge_ip}/api"
+        base = f"https://{self.bridge_ip}/api"
         if include_username:
             if not self.username:
                 raise HueError("Missing Hue username/token")
@@ -102,8 +110,12 @@ class HueClient:
             headers["Content-Type"] = "application/json"
 
         req = request.Request(url, method=method, data=body, headers=headers)
+        urlopen_kwargs: dict[str, Any] = {"timeout": self.timeout}
+        if self.insecure_tls:
+            # Hue bridges can present certificates not trusted by local OS stores.
+            urlopen_kwargs["context"] = ssl._create_unverified_context()
         try:
-            with request.urlopen(req, timeout=self.timeout) as resp:
+            with request.urlopen(req, **urlopen_kwargs) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except error.URLError as exc:
             raise HueError(f"Network error when calling Hue bridge at {url}: {exc}") from exc

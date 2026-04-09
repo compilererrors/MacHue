@@ -55,6 +55,20 @@ class HueTests(unittest.TestCase):
         with self.assertRaises(HueError):
             client._request("GET", "/lights")
 
+    def test_request_uses_https_for_bridge_calls(self) -> None:
+        client = HueClient("192.168.1.20", username="u1")
+        captured: dict[str, str] = {}
+
+        def _fake_urlopen(req, **kwargs):
+            captured["url"] = req.full_url
+            return _FakeHTTPResponse({})
+
+        with patch("machue.hue.request.urlopen", side_effect=_fake_urlopen):
+            result = client._request("GET", "/lights")
+
+        self.assertEqual(result, {})
+        self.assertEqual(captured["url"], "https://192.168.1.20/api/u1/lights")
+
     def test_raise_if_hue_error_raises(self) -> None:
         with self.assertRaises(HueError):
             HueClient._raise_if_hue_error(

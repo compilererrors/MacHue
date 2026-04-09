@@ -1,6 +1,6 @@
 # MacHue
 
-CLI and TUI for local Philips Hue control via Hue Bridge API v1.
+CLI and TUI for local Philips Hue control via Hue Bridge API v1 over HTTPS.
 
 ## Overview
 
@@ -9,6 +9,11 @@ This project includes:
 - `CLI` for discovery, pairing, light control, scene handling, and config management
 - `TUI` (curses) for interactive light and scene control in the terminal
 - local config file for bridge IP and API token
+
+Protocol notes:
+
+- Bridge communication uses HTTPS (`https://<bridge_ip>/api/...`).
+- This project currently targets Hue local API v1 endpoints (`/lights`, `/groups`, `/scenes`).
 
 ## Technology Choice
 
